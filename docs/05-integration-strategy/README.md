@@ -35,6 +35,10 @@ graph LR
     SOP_ADAP -->|Graph API| SHAREPOINT
 ```
 
+> [!TIP]
+> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
+> ![System Integration Overview](system_integration.png)
+
 ---
 
 ## 2. Integration Adapters Specification
