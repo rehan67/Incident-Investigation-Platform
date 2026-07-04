@@ -8,6 +8,10 @@ This document charts how data moves through the platform during an incident inve
 [1. Incident Event] ──► [2. Context Assembly] ──► [3. AI Transformation] ──► [4. Report Drafting] ──► [5. Review & Finalize]
 ```
 
+> [!TIP]
+> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
+> ![Data Flow Pipeline](dataflow.png)
+
 ---
 
 ### Stage 1: Incident Registration (Command Flow)
@@ -17,7 +21,7 @@ This document charts how data moves through the platform during an incident inve
     *   `downtimeStart` (ISO 8601 UTC timestamp)
     *   `severity` (1-5 classification)
     *   `symptomDescription` (Text)
-3.  The request hits the **API Gateway**, which validates the JWT access token and claims, checks rate limits, and routes the request to the **Incident Service**.
+3.  The request hits **Azure Front Door Premium + WAF**, which filters the traffic and routes it to **Azure API Management (APIM)**. APIM validates the JWT access token/claims, checks rate limits, and forwards the request through the **Azure Standard Load Balancer** and **NGINX Ingress** to the **Incident Service**.
 4.  The **Incident Service** validates the payload, writes a record to `incidents_db` in the `incidents` table, and publishes an `incident.created` event to the `incidents` Kafka topic.
 
 ### Stage 2: Automated Context Assembly (Aggregated Flow)
@@ -34,7 +38,7 @@ This document charts how data moves through the platform during an incident inve
 2.  The **AI Gateway**:
     *   Redacts PII or proprietary parameters (e.g., specific operator names) based on rules.
     *   Injects the context into a pre-configured, versioned **Prompt Template** retrieved from Redis.
-    *   Executes an outbound HTTPS REST call to the **External AI Service** (e.g., Azure OpenAI).
+    *   Executes an outbound HTTPS REST call to the **External AI Service** (e.g., Azure OpenAI) routed through the **Azure Firewall Premium** for secure egress filtering.
 3.  Upon receiving the raw AI completion, the AI Gateway runs validation logic (JSON schema checks, safety evaluations).
 4.  If the response is valid, the AI Gateway returns a standardized JSON structure (`AnalysisResult`) to the orchestrator. If it fails validation, the gateway throws an error, prompting the orchestrator to trigger its retry strategy.
 5.  The orchestrator writes the finalized AI context package to `investigation_steps` for auditing.
