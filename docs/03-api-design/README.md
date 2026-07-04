@@ -27,20 +27,44 @@ The platform follows a uniform and developer-friendly RESTful interface design, 
 
 ## 2. API Gateway Routing & Cross-Cutting Policies
 
-The platform deploys **Azure API Management (APIM)** as its frontend API Gateway. APIM manages inbound client requests, runs validation, and forwards traffic to the internal K8s cluster IP services.
+The platform deploys **Azure API Management (APIM)** as its API Gateway (positioned behind Azure Front Door Premium). APIM manages API authorization, request validation, and forwards traffic through the Azure Standard Load Balancer to the AKS NGINX Ingress Controller, which then routes it to the respective microservices.
 
 ```mermaid
 graph TD
-    CLIENT[React Client] -->|HTTPS| APIM[Azure API Management]
-    APIM -->|Validate JWT / Rate Limit| APIM
-    APIM -->|Route: /api/v1/incidents| INC[Incident Service]
-    APIM -->|Route: /api/v1/equipment| EQ[Equipment Service]
-    APIM -->|Route: /api/v1/reports| RPT[Report Service]
+    CLIENT["React Client"]
+    FD["Azure Front Door Premium + WAF"]
+    CDN["Azure CDN"]
+    STORAGE["Static Web Hosting"]
+    APIM["Azure API Management (APIM)"]
+    LB["Azure Standard Load Balancer"]
+    INGRESS["NGINX Ingress Controller"]
+    INC["Incident Service"]
+    EQ["Equipment Service"]
+    RPT["Report Service"]
+    ORCH["Investigation Service"]
+
+    CLIENT -->|Request Static Assets| FD
+    FD --> CDN
+    CDN --> STORAGE
+    STORAGE -->|Download React SPA| CLIENT
+
+    CLIENT -->|API Calls HTTPS| FD
+    FD -->|WAF Security & Edge Routing| APIM
+    APIM -->|JWT Validation & Rate Limit| APIM
+    APIM -->|Forward Incidents| LB
+    APIM -->|Forward Equipment| LB
+    APIM -->|Forward Reports| LB
+
+    LB --> INGRESS
+    INGRESS -->|Route to Incident| INC
+    INGRESS -->|Route to Equipment| EQ
+    INGRESS -->|Route to Report| RPT
+    INGRESS -->|Route to Orchestration| ORCH
 ```
 
 > [!TIP]
 > **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
-> ![API Gateway Routing](api_design.png)
+> ![API Gateway Routing](api_design_complete.png)
 
 ### Gateway Policies (XML Snippet Concept)
 APIM applies policies to enforce constraints uniformly:
