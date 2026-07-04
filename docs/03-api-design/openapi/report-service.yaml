@@ -1,0 +1,231 @@
+openapi: 3.0.3
+info:
+  title: Report Service API
+  description: Service responsible for managing the generation, editing, versioning, and final submission of incident investigation reports.
+  version: 1.0.0
+servers:
+  - url: https://api.semicon-corp.com/api/v1
+paths:
+  /reports:
+    post:
+      summary: Create report draft from investigation
+      description: Orchestrated command to initialize a report document from completed AI investigation findings.
+      security:
+        - OAuth2: [engineer, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - investigationId
+                - title
+              properties:
+                investigationId:
+                  type: string
+                  format: uuid
+                title:
+                  type: string
+                  example: Downtime Report - Lithography Scanner A
+      responses:
+        '201':
+          description: Draft report generated.
+          headers:
+            Location:
+              schema:
+                type: string
+                example: /api/v1/reports/d99f110c-3bb3-4e4b-bb52-520c74fb9c92
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportResponseEnvelope'
+
+  /reports/{id}:
+    get:
+      summary: Retrieve report details
+      security:
+        - OAuth2: [engineer, admin]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Report returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportResponseEnvelope'
+        '404':
+          description: Report not found.
+
+    patch:
+      summary: Edit report findings (Engineer Review)
+      description: Allows engineers to modify root cause descriptions and corrective action items during review.
+      security:
+        - OAuth2: [engineer, admin]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditReportRequest'
+      responses:
+        '200':
+          description: Report updated. A new version entry is logged.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportResponseEnvelope'
+        '409':
+          description: Conflict (Report is locked/submitted).
+
+  /reports/{id}/submit:
+    put:
+      summary: Submit finalized report
+      description: Finalizes and locks the report document, transitioning the incident status to CLOSED.
+      security:
+        - OAuth2: [engineer, admin]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Report finalized.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      reportId:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                        example: SUBMITTED
+                      submittedAt:
+                        type: string
+                        format: date-time
+
+  /reports/{id}/versions:
+    get:
+      summary: Get report version history
+      description: Returns historical draft edits for audit logging.
+      security:
+        - OAuth2: [engineer, admin]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Version logs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        versionNumber:
+                          type: integer
+                        editedBy:
+                          type: string
+                          format: uuid
+                        changeSummary:
+                          type: string
+                        createdAt:
+                          type: string
+                          format: date-time
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+          tokenUrl: https://login.microsoftonline.com/common/oauth2/v2.0/token
+          scopes:
+            engineer: Access standard capabilities.
+
+  schemas:
+    ReportResponseEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            reportId:
+              type: string
+              format: uuid
+              example: d99f110c-3bb3-4e4b-bb52-520c74fb9c92
+            investigationId:
+              type: string
+              format: uuid
+            title:
+              type: string
+              example: Downtime Report - Lithography Scanner A - 2025-07-01
+            status:
+              type: string
+              enum: [DRAFT, SUBMITTED]
+              example: DRAFT
+            version:
+              type: integer
+              example: 1
+            findings:
+              type: object
+              properties:
+                rootCause:
+                  type: string
+                  example: MFC calibration drift on Gas Line 2.
+                correctiveActions:
+                  type: array
+                  items:
+                    type: string
+                  example: ["Recalibrate MFC on Gas Line 2"]
+            pdfUrl:
+              type: string
+              example: https://storage.semicon-corp.com/reports/d99f110c.pdf
+
+    EditReportRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        findings:
+          type: object
+          properties:
+            rootCause:
+              type: string
+            correctiveActions:
+              type: array
+              items:
+                type: string
+        changeSummary:
+          type: string
+          example: Adjusted root cause description after manual pressure test validation.

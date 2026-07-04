@@ -1,0 +1,155 @@
+openapi: 3.0.3
+info:
+  title: AI Gateway Service API (Internal)
+  description: Internal service acting as the abstraction boundary for third-party LLM inference, prompt parsing, and output validation.
+  version: 1.0.0
+servers:
+  - url: https://api.semicon-corp.com/internal/ai
+paths:
+  /analyze:
+    post:
+      summary: Dispatch context package to AI model
+      description: Redacts PII, interpolates prompt templates, sends to the configured model, and validates the output structure.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+      responses:
+        '200':
+          description: AI analysis complete and successfully validated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisResultEnvelope'
+        '400':
+          description: Validation error or malformed payload.
+        '422':
+          description: AI output failed schema/safety validations.
+        '502':
+          description: External AI provider timeout or availability error.
+
+  /providers:
+    get:
+      summary: List configured AI providers
+      description: Returns list of active, configured LLM adapters (e.g. OpenAI, Bedrock).
+      responses:
+        '200':
+          description: List of providers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          example: AzureOpenAI
+                        isActive:
+                          type: boolean
+                          example: true
+                        modelName:
+                          type: string
+                          example: gpt-4o
+
+  /health:
+    get:
+      summary: Check provider network health
+      description: Tests ping and connection status to external vendor endpoints.
+      responses:
+        '200':
+          description: Health statuses.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: Healthy
+
+components:
+  schemas:
+    AnalyzeRequest:
+      type: object
+      required:
+        - investigationId
+        - incidentId
+        - downtimeStart
+        - description
+        - equipmentInfo
+        - alarms
+      properties:
+        investigationId:
+          type: string
+          format: uuid
+        incidentId:
+          type: string
+          format: uuid
+        downtimeStart:
+          type: string
+          format: date-time
+        description:
+          type: string
+          example: Chamber A pressure drop.
+        equipmentInfo:
+          type: object
+          properties:
+            assetTag:
+              type: string
+              example: LITH-042
+            model:
+              type: string
+              example: DUV-9000
+        alarms:
+          type: array
+          items:
+            type: object
+            properties:
+              alarmCode:
+                type: string
+                example: ALM-PRESS-ERR
+              triggeredAt:
+                type: string
+                format: date-time
+        sops:
+          type: array
+          items:
+            type: object
+            properties:
+              sopId:
+                type: string
+              title:
+                type: string
+
+    AnalysisResultEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            rootCause:
+              type: string
+              example: Mass Flow Controller calibration drift on Gas Line 2.
+            confidenceScore:
+              type: number
+              example: 0.88
+            suggestedSopIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+              example: ["77e6b04d-e9b2-4d2d-9bdd-2b0d7b3dcb6d"]
+            correctiveActions:
+              type: array
+              items:
+                type: string
+              example: ["Recalibrate MFC on Gas Line 2", "Perform leak check on chamber seals"]
+            safetyReviewRequired:
+              type: boolean
+              example: false

@@ -1,0 +1,197 @@
+openapi: 3.0.3
+info:
+  title: Incident Service API
+  description: Service responsible for managing downtime incident lifecycles and workflow states.
+  version: 1.0.0
+servers:
+  - url: https://api.semicon-corp.com/api/v1
+paths:
+  /incidents:
+    post:
+      summary: Report a downtime incident
+      description: Registers a new tool downtime incident and triggers the backend event pipeline.
+      security:
+        - OAuth2: [engineer, admin]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Unique key to prevent double submissions.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIncidentRequest'
+      responses:
+        '201':
+          description: Incident reported successfully.
+          headers:
+            Location:
+              schema:
+                type: string
+                example: /api/v1/incidents/7b0d1e3a-4f2e-4096-a94f-f232490abdc8
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentResponseEnvelope'
+        '400':
+          description: Invalid input parameters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Unauthorized access token.
+        '429':
+          description: Rate limit exceeded.
+
+  /incidents/{id}:
+    get:
+      summary: Retrieve incident details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Incident details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentResponseEnvelope'
+        '404':
+          description: Incident not found.
+
+  /incidents/{id}/investigate:
+    post:
+      summary: Trigger automated investigation saga
+      description: Initiates the background data-gathering and AI analysis saga.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Investigation triggered. Location header contains the saga monitor endpoint.
+          headers:
+            Location:
+              schema:
+                type: string
+                example: /api/v1/investigations/f222b10a-3c92-41df-a550-67c29e2f5f14
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+          tokenUrl: https://login.microsoftonline.com/common/oauth2/v2.0/token
+          scopes:
+            engineer: Access standard engineer capabilities.
+            admin: Access administrator operations.
+
+  schemas:
+    CreateIncidentRequest:
+      type: object
+      required:
+        - equipmentId
+        - downtimeStart
+        - severity
+        - symptomDescription
+      properties:
+        equipmentId:
+          type: string
+          format: uuid
+          example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+        downtimeStart:
+          type: string
+          format: date-time
+          example: '2025-07-01T14:10:00Z'
+        severity:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 4
+        symptomDescription:
+          type: string
+          maxLength: 1000
+          example: Chamber A pressure drop during deposition step. Recipe aborted.
+
+    IncidentResponseEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            incidentId:
+              type: string
+              format: uuid
+              example: 7b0d1e3a-4f2e-4096-a94f-f232490abdc8
+            equipmentId:
+              type: string
+              format: uuid
+              example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+            status:
+              type: string
+              enum: [REPORTED, UNDER_INVESTIGATION, AWAITING_REVIEW, CLOSED]
+              example: REPORTED
+            severity:
+              type: integer
+              example: 4
+            downtimeStart:
+              type: string
+              format: date-time
+              example: '2025-07-01T14:10:00Z'
+            createdAt:
+              type: string
+              format: date-time
+              example: '2025-07-01T14:10:05Z'
+        links:
+          type: object
+          properties:
+            self:
+              type: string
+              example: /api/v1/incidents/7b0d1e3a-4f2e-4096-a94f-f232490abdc8
+            investigate:
+              type: string
+              example: /api/v1/incidents/7b0d1e3a-4f2e-4096-a94f-f232490abdc8/investigate
+
+    ProblemDetails:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - detail
+        - instance
+      properties:
+        type:
+          type: string
+          example: https://api.platform.com/errors/validation-error
+        title:
+          type: string
+          example: One or more validation errors occurred.
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          example: The field 'severity' must be between 1 and 5.
+        instance:
+          type: string
+          example: /api/v1/incidents
+        traceId:
+          type: string
+          example: abc-123-def-456
+

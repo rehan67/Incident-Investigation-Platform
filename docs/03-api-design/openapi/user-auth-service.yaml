@@ -1,0 +1,98 @@
+openapi: 3.0.3
+info:
+  title: User & Auth Service API
+  description: Handles authentication, JWT issuance, and RBAC permission checks against Entra ID.
+  version: 1.0.0
+servers:
+  - url: https://api.semicon-corp.com/api/v1
+paths:
+  /auth/login:
+    post:
+      summary: Authenticate user & issue tokens
+      description: Exchanges an authorization code from Microsoft Entra ID (OIDC) for a localized security token (JWT).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authentication successful.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '401':
+          description: Authentication failed.
+
+  /users/me:
+    get:
+      summary: Get current user profile and permissions
+      description: Returns user info and claims extracted from the JWT session.
+      security:
+        - OAuth2: []
+      responses:
+        '200':
+          description: Active user profile details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        implicit:
+          authorizationUrl: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+          scopes:
+            openid: Required OpenID connect scope
+            profile: Access profile data
+
+  schemas:
+    LoginRequest:
+      type: object
+      required:
+        - code
+        - redirectUri
+      properties:
+        code:
+          type: string
+          description: OIDC auth code from Entra ID.
+        redirectUri:
+          type: string
+
+    AuthTokenResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        idToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresInSeconds:
+          type: integer
+
+    UserProfileResponse:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          example: rehan.engineer@semicon-corp.com
+        name:
+          type: string
+          example: Rehan Engineer
+        role:
+          type: string
+          enum: [engineer, lead, manager, admin]
+        permissions:
+          type: array
+          items:
+            type: string
+          example: ["create_incident", "submit_report", "trigger_investigation"]

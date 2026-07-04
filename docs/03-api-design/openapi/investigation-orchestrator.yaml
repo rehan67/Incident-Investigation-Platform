@@ -1,0 +1,128 @@
+openapi: 3.0.3
+info:
+  title: Investigation Orchestrator API
+  description: Manages and queries the state-machine execution of automated downtime investigations.
+  version: 1.0.0
+servers:
+  - url: https://api.semicon-corp.com/api/v1
+paths:
+  /investigations:
+    post:
+      summary: Manually trigger an investigation saga
+      description: Initiates the context assembly and AI analysis saga for an incident. Checks status to prevent duplicate execution.
+      security:
+        - OAuth2: [engineer, lead, manager, admin]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartInvestigationRequest'
+      responses:
+        '201':
+          description: Investigation saga initiated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SagaStatusResponse'
+        '409':
+          description: Conflict. Saga already running or completed for this incident.
+
+  /investigations/{id}:
+    get:
+      summary: Retrieve investigation saga status and gathered context
+      description: Returns the state machine progress, step logs, and the consolidated context package.
+      security:
+        - OAuth2: [engineer, lead, manager, admin]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Saga execution status details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SagaStatusResponse'
+        '404':
+          description: Investigation record not found.
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        implicit:
+          authorizationUrl: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+          scopes:
+            engineer: Read-only access to engineering data
+            lead: Edit and approve access
+            manager: Analytics read access
+            admin: Admin controls
+
+  schemas:
+    StartInvestigationRequest:
+      type: object
+      required:
+        - incidentId
+      properties:
+        incidentId:
+          type: string
+          format: uuid
+
+    SagaStatusResponse:
+      type: object
+      properties:
+        investigationId:
+          type: string
+          format: uuid
+        incidentId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [INITIATED, GATHERING_CONTEXT, CONTEXT_READY, CONTEXT_PARTIAL, AI_PROCESSING, AI_COMPLETED, AI_FAILED, RETRYING, MANUAL_REVIEW, GENERATING_REPORT, COMPLETED]
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/SagaStep'
+        contextPackage:
+          type: object
+          nullable: true
+          description: The aggregated context payload (Equipment, Alarms, SOPs, Production runs)
+
+    SagaStep:
+      type: object
+      properties:
+        stepName:
+          type: string
+          example: GatherAlarmHistory
+        status:
+          type: string
+          enum: [PENDING, RUNNING, COMPLETED, FAILED, COMPENSATED]
+        startedAt:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+        errorMessage:
+          type: string
+          nullable: true

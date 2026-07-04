@@ -1,0 +1,180 @@
+openapi: 3.0.3
+info:
+  title: Equipment Service API
+  description: Service responsible for managing semiconductor equipment configuration profiles and maintenance history.
+  version: 1.0.0
+servers:
+  - url: https://api.semicon-corp.com/api/v1
+paths:
+  /equipment/{id}:
+    get:
+      summary: Retrieve equipment profile
+      description: Returns core asset metadata, current operation status, and location in the fabrication facility.
+      security:
+        - OAuth2: [engineer, admin]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Equipment details retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipmentResponseEnvelope'
+        '404':
+          description: Equipment not found.
+
+  /equipment/{id}/maintenance-history:
+    get:
+      summary: Retrieve maintenance logs
+      description: Returns historical corrective and preventive maintenance records performed on this asset.
+      security:
+        - OAuth2: [engineer, admin]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Maintenance records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceHistoryResponse'
+
+  /equipment/{id}/configuration:
+    get:
+      summary: Get tool configuration parameters
+      description: Returns active chamber recipes, calibration values, and warning thresholds.
+      security:
+        - OAuth2: [engineer, admin]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Active configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigurationResponse'
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+          tokenUrl: https://login.microsoftonline.com/common/oauth2/v2.0/token
+          scopes:
+            engineer: Access standard capabilities.
+
+  schemas:
+    EquipmentResponseEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            equipmentId:
+              type: string
+              format: uuid
+              example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+            assetTag:
+              type: string
+              example: LITH-042
+            name:
+              type: string
+              example: Photolithography Scanner A
+            type:
+              type: string
+              example: LITHOGRAPHY
+            location:
+              type: string
+              example: Bay 4, Fab 2
+            model:
+              type: string
+              example: DUV-9000
+            manufacturer:
+              type: string
+              example: ASML
+            status:
+              type: string
+              enum: [RUN, IDLE, DOWN, MAINTENANCE]
+              example: RUN
+            createdAt:
+              type: string
+              format: date-time
+              example: '2022-01-15T08:00:00Z'
+
+    MaintenanceHistoryResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              recordId:
+                type: string
+                format: uuid
+                example: e333b210-4f5a-4e2e-8a12-8888b6b2fa14
+              maintenanceType:
+                type: string
+                enum: [PREVENTIVE, CORRECTIVE]
+                example: CORRECTIVE
+              description:
+                type: string
+                example: Replaced laser source module due to power degradation.
+              performedBy:
+                type: string
+                format: uuid
+                example: a111c333-8f8f-4e4e-9b9b-999999999999
+              performedAt:
+                type: string
+                format: date-time
+                example: '2025-06-20T10:00:00Z'
+              partsReplaced:
+                type: string
+                example: Laser Module SKU-90
+              downtimeHours:
+                type: number
+                example: 4.5
+
+    ConfigurationResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            recipeName:
+              type: string
+              example: Gate-Oxide-Dep-22nm
+            temperatureSetPoint:
+              type: number
+              example: 450.5
+            pressureLimitMtorr:
+              type: integer
+              example: 120
+            gasFlowRateSccm:
+              type: integer
+              example: 50

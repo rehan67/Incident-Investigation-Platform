@@ -1,0 +1,152 @@
+version: '3.8'
+
+services:
+  # Message Broker (Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  # Caching and Session Store
+  redis:
+    image: redis:7.0-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --save 60 1 --loglevel warning
+
+  # Primary PostgreSQL Database Instance
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: SecretPassword123
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # TimescaleDB Instance (Alarms time-series)
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: SecretAlarmPassword123
+    volumes:
+      - timescaledata:/var/lib/postgresql/data
+
+  # Elasticsearch (SOP Search Engine)
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.6.2
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+
+  # Core Platform Microservices (Skeletons / Configurations)
+  incident-service:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+    depends_on:
+      - postgres
+      - kafka
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=incidents_db;Username=postgres;Password=SecretPassword123
+      - Kafka__BootstrapServers=kafka:29092
+    ports:
+      - "5001:80"
+
+  equipment-service:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=equipment_db;Username=postgres;Password=SecretPassword123
+      - Redis__ConnectionString=redis:6379
+    ports:
+      - "5002:80"
+
+  alarm-history-service:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+    depends_on:
+      - timescaledb
+      - kafka
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=timescaledb;Database=alarms_db;Username=postgres;Password=SecretAlarmPassword123
+      - Kafka__BootstrapServers=kafka:29092
+    ports:
+      - "5003:80"
+
+  sop-service:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+    depends_on:
+      - postgres
+      - elasticsearch
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=sops_db;Username=postgres;Password=SecretPassword123
+      - Elasticsearch__Uri=http://elasticsearch:9200
+    ports:
+      - "5004:80"
+
+  investigation-orchestrator:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+    depends_on:
+      - postgres
+      - kafka
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=investigations_db;Username=postgres;Password=SecretPassword123
+      - Kafka__BootstrapServers=kafka:29092
+      - Services__EquipmentServiceUrl=http://equipment-service:80
+      - Services__AlarmHistoryServiceUrl=http://alarm-history-service:80
+      - Services__SopServiceUrl=http://sop-service:80
+      - Services__AiGatewayServiceUrl=http://ai-gateway-service:80
+    ports:
+      - "5005:80"
+
+  ai-gateway-service:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+    depends_on:
+      - redis
+    environment:
+      - Redis__ConnectionString=redis:6379
+      - AiGatewayOptions__ActiveProvider=AzureOpenAI
+    ports:
+      - "5006:80"
+
+  report-service:
+    image: mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+    depends_on:
+      - postgres
+      - kafka
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=reports_db;Username=postgres;Password=SecretPassword123
+      - Kafka__BootstrapServers=kafka:29092
+    ports:
+      - "5007:80"
+
+volumes:
+  pgdata:
+  timescaledata:
+  esdata:

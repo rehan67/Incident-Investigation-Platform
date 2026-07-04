@@ -1,0 +1,84 @@
+openapi: 3.0.3
+info:
+  title: Production Data Service API
+  description: Connects to the MES system to retrieve wafer runs, active lot IDs, and active recipe parameters.
+  version: 1.0.0
+servers:
+  - url: https://api.semicon-corp.com/api/v1
+paths:
+  /production/context:
+    get:
+      summary: Retrieve production context for tool failure
+      description: Returns the active run metadata, recipe variables, and lot ID for a machine at a specific historical point in time.
+      security:
+        - OAuth2: [engineer, lead, manager, admin]
+      parameters:
+        - name: equipmentId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: timestamp
+          in: query
+          required: true
+          description: Timestamp of when the downtime incident occurred.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Production context for the tool.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductionContext'
+        '404':
+          description: No matching context found.
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        implicit:
+          authorizationUrl: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+          scopes:
+            engineer: Read-only access to engineering data
+            lead: Edit and approve access
+            manager: Analytics read access
+            admin: Admin controls
+
+  schemas:
+    ProductionContext:
+      type: object
+      properties:
+        runId:
+          type: string
+          format: uuid
+        equipmentId:
+          type: string
+          format: uuid
+        lotId:
+          type: string
+          example: LOT-883921.A
+        recipeName:
+          type: string
+          example: OXIDE-DEP-200A
+        waferCount:
+          type: integer
+          example: 25
+        stepNumber:
+          type: integer
+          example: 4
+        recordedAt:
+          type: string
+          format: date-time
+        recipeParameters:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            gasFlowRate: "120sccm"
+            chamberTemp: "450C"
+            rfPower: "600W"

@@ -1,0 +1,114 @@
+openapi: 3.0.3
+info:
+  title: Audit Service API
+  description: Provides access to compliance, write action logs, and AI decisions history. Restricted to lead and admin roles.
+  version: 1.0.0
+servers:
+  - url: https://api.semicon-corp.com/api/v1
+paths:
+  /audit/logs:
+    get:
+      summary: Retrieve system audit trails
+      description: Returns security and state-change history records. Supports filtering by actor, trace, and entity type.
+      security:
+        - OAuth2: [manager, admin]
+      parameters:
+        - name: entityType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [Incident, Investigation, Report, User]
+        - name: entityId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: actorId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: traceId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Audit logs query completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogsResponse'
+        '403':
+          description: Forbidden (role permissions insufficient).
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        implicit:
+          authorizationUrl: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+          scopes:
+            manager: Read analytics and audit reports
+            admin: Admin controls
+
+  schemas:
+    AuditLogsResponse:
+      type: object
+      properties:
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogEntry'
+        count:
+          type: integer
+
+    AuditLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        entityType:
+          type: string
+          example: Report
+        entityId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          example: SUBMITTED
+        actorId:
+          type: string
+          format: uuid
+        actorRole:
+          type: string
+          example: lead
+        ipAddress:
+          type: string
+          example: 10.0.4.12
+        traceId:
+          type: string
+          example: 8e49b81b29a21b33
+        timestamp:
+          type: string
+          format: date-time
+        oldValue:
+          type: object
+          nullable: true
+          description: Previous serialized state snapshot
+        newValue:
+          type: object
+          nullable: true
+          description: Updated serialized state snapshot

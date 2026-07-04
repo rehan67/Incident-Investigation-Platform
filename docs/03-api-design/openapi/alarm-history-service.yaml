@@ -1,0 +1,175 @@
+openapi: 3.0.3
+info:
+  title: Alarm History Service API
+  description: Ingests and queries high-frequency machine alarm logs. Optimized for time-series ranges.
+  version: 1.0.0
+servers:
+  - url: https://api.semicon-corp.com/api/v1
+paths:
+  /alarms:
+    get:
+      summary: Query alarm events for equipment
+      description: Returns time-series alarm logs for a specific machine during a downtime window. Uses cursor-based pagination for high-volume logs.
+      security:
+        - OAuth2: [engineer, lead, manager, admin]
+      parameters:
+        - name: equipmentId
+          in: query
+          required: true
+          description: Unique ID of the equipment tool.
+          schema:
+            type: string
+            format: uuid
+        - name: startTime
+          in: query
+          required: true
+          description: ISO-8601 timestamp of start of window.
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          required: false
+          description: ISO-8601 timestamp of end of window (defaults to now).
+          schema:
+            type: string
+            format: date-time
+        - name: severity
+          in: query
+          required: false
+          description: Filter by alarm severity.
+          schema:
+            type: string
+            enum: [INFO, WARNING, CRITICAL, FATAL]
+        - name: cursor
+          in: query
+          required: false
+          description: Pagination cursor for next page of records.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Number of records to return.
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Alarm logs query completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlarmListResponse'
+        '400':
+          description: Invalid query parameters.
+        '401':
+          description: Unauthorized.
+
+  /alarms/ingest:
+    post:
+      summary: Bulk ingest alarm logs
+      description: Internal endpoint used by SCADA telemetry collector agents to push log batches.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlarmIngestRequest'
+      responses:
+        '202':
+          description: Alarm logs accepted for ingestion.
+        '400':
+          description: Invalid batch format.
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        implicit:
+          authorizationUrl: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+          scopes:
+            engineer: Read-only access to engineering data
+            lead: Edit and approve access
+            manager: Analytics read access
+            admin: Admin controls
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Collector-Token
+
+  schemas:
+    AlarmListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlarmRecord'
+        nextCursor:
+          type: string
+          nullable: true
+          description: Pass this to cursor parameter for next page.
+        pageSize:
+          type: integer
+
+    AlarmRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        equipmentId:
+          type: string
+          format: uuid
+        alarmCode:
+          type: string
+          example: ALM-201
+        description:
+          type: string
+          example: Vacuum chamber pressure drop below threshold
+        severity:
+          type: string
+          enum: [INFO, WARNING, CRITICAL, FATAL]
+        timestamp:
+          type: string
+          format: date-time
+        resolved:
+          type: boolean
+        durationSeconds:
+          type: integer
+          nullable: true
+
+    AlarmIngestRequest:
+      type: object
+      required:
+        - equipmentId
+        - alarms
+      properties:
+        equipmentId:
+          type: string
+          format: uuid
+        alarms:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlarmIngestItem'
+
+    AlarmIngestItem:
+      type: object
+      required:
+        - alarmCode
+        - timestamp
+      properties:
+        alarmCode:
+          type: string
+        description:
+          type: string
+        severity:
+          type: string
+          enum: [INFO, WARNING, CRITICAL, FATAL]
+        timestamp:
+          type: string
+          format: date-time

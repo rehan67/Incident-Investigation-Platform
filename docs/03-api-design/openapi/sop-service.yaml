@@ -1,0 +1,138 @@
+openapi: 3.0.3
+info:
+  title: SOP Service API
+  description: Manages Standard Operating Procedures (SOPs) and provides full-text and relevant metadata search.
+  version: 1.0.0
+servers:
+  - url: https://api.semicon-corp.com/api/v1
+paths:
+  /sops/search:
+    get:
+      summary: Search SOPs
+      description: Performs full-text search against the SOP knowledge base index.
+      security:
+        - OAuth2: [engineer, lead, manager, admin]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: Search keywords.
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Search results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SopSearchResponse'
+
+  /sops/relevant:
+    get:
+      summary: Find relevant SOPs for incident
+      description: Returns SOPs matching specific equipment models and alarm codes to assist triaging.
+      security:
+        - OAuth2: [engineer, lead, manager, admin]
+      parameters:
+        - name: equipmentId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: alarmCode
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of relevant SOPs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SopRecord'
+
+  /sops/{id}:
+    get:
+      summary: Retrieve SOP details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: SOP document.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SopRecord'
+        '404':
+          description: SOP not found.
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        implicit:
+          authorizationUrl: https://login.microsoftonline.com/common/oauth2/v2.0/authorize
+          scopes:
+            engineer: Read-only access to engineering data
+            lead: Edit and approve access
+            manager: Analytics read access
+            admin: Admin controls
+
+  schemas:
+    SopSearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SopRecord'
+        totalResults:
+          type: integer
+
+    SopRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Vacuum Chamber Pressure Troubleshooting Guide
+        equipmentModel:
+          type: string
+          example: Centura-5200
+        alarmCodes:
+          type: array
+          items:
+            type: string
+          example: ["ALM-201", "ALM-202"]
+        content:
+          type: string
+          example: "Steps: 1. Verify foreline valves are open..."
+        version:
+          type: integer
+        lastUpdated:
+          type: string
+          format: date-time
