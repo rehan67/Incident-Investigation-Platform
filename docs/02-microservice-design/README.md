@@ -256,30 +256,7 @@ public record ReportGeneratedEvent(
 
 To enforce strict service boundaries and avoid shared database anti-patterns, the database instances are isolated:
 
-```
-┌────────────────────────────────────────────────────────┐
-│                   POSTGRESQL INSTANCES                 │
-├──────────────────────┬─────────────────────────────────┤
-│ PostgreSQL Instance  │ Schema / Service                │
-├──────────────────────┼─────────────────────────────────┤
-│ incidents_db         │ Incident Service                │
-│ equipment_db         │ Equipment Service               │
-│ sops_db              │ SOP Service                     │
-│ production_db        │ Production Data Service         │
-│ investigations_db    │ Investigation Orchestrator      │
-│ reports_db           │ Report Service                  │
-│ users_db             │ User & Auth Service             │
-│ audit_db             │ Audit Service                   │
-├──────────────────────┼─────────────────────────────────┤
-│ TimescaleDB Instance │ Schema / Service                │
-├──────────────────────┼─────────────────────────────────┤
-│ alarms_db            │ Alarm History Service           │
-└──────────────────────┴─────────────────────────────────┘
-```
-
-> [!TIP]
-> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
-> ![Database Mapping](database_mapping.png)
+![Database Mapping](database_mapping.png)
 
 ---
 
