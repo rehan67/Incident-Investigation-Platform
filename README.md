@@ -10,7 +10,10 @@ A comprehensive architecture design for an enterprise-grade, AI-ready platform t
 
 Semiconductor equipment engineers currently **manually** retrieve alarm logs, maintenance history, SOPs, and production information when machine downtime occurs — before deciding on corrective actions. This is time-consuming, error-prone, and doesn't scale.
 
+### The "Before" State: Manual Data Gathering
+![Legacy Manual Investigation Process](manual_investigation_process.png)
 
+### The "After" State: Automated Platform Solution
 ![Platform Solution Overview](solution.png)
 
 The architecture is designed to support **future Agentic AI capabilities** without requiring re-architecture.
