@@ -124,7 +124,6 @@ public record ProductionSnapshot(
 ---
 
 ## 3. Data Lifecycle States
-
 ![Data Lifecycle States](data_lifecycle_states.png)
 
 ---
