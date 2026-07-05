@@ -23,7 +23,7 @@ graph TD
 
 > [!TIP]
 > **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
-> ![AI Gateway Abstraction](ai_ integration_strategy .png)
+> ![AI Gateway Abstraction](ai_gateway_architecture.png)
 
 ### Swapping Providers via Configuration
 Providers can be hot-swapped dynamically by updating service configurations (e.g., in Kubernetes config maps or Azure App Configuration) without redeploying code.
@@ -51,6 +51,10 @@ Before incident context is dispatched to external AI models, it undergoes a mult
 [Raw Context Assembly] ──► [PII & Proprietary Redaction] ──► [Prompt Injection] ──► [Payload Token Guard]
 ```
 
+> [!TIP]
+> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
+> ![Context Preparation Pipeline](context_preparation_pipeline.png)
+
 1.  **PII & Proprietary Redaction**: Equipment configurations and operator comments may contain sensitive proprietary data or operator names. The pipeline sweeps the JSON payload, matching patterns (Regex, Lexers) to redact operators' emails, IP addresses, and specific sensor recipes, replacing them with generic tags (e.g., `<REDACTED_IP>`).
 2.  **Prompt Template Engine**: Prompt templates are stored in Redis (with PostgreSQL backup) and versioned. The engine hydrates the template variables using the redacted context package.
 3.  **Token Guard**: AI APIs have context limits. The Token Guard runs a fast tokenizer (e.g., TikToken) on the formatted payload. If the token count exceeds the model limit (e.g., 128k tokens), it truncates the oldest alarm logs or maintenance records first, ensuring the critical downtime symptoms and relevant SOP summaries are preserved.
@@ -75,6 +79,10 @@ AI models are non-deterministic and can produce invalid JSON or "hallucinate" in
        └──► Layer 5: Safety Guard (Critical Actions Check) ───[Flag]──► Force Human Override
 ```
 
+> [!TIP]
+> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
+> ![Five-Layer AI Response Validation](ai_response_validation.png)
+
 1.  **JSON Schema Validation**: Verifies that the AI response is valid JSON and matches the structured schemas (`AnalysisResult`).
 2.  **Completeness Validation**: Checks for required fields, ensuring the model provided at least one `rootCause` and a `correctiveAction` list.
 3.  **Confidence Score Gate**: The prompt instructs the model to return a self-assessed confidence score (0.0 to 1.0) based on context clarity. If the score falls below `0.70`, the report is generated but flagged with a `LOW_CONFIDENCE` warning.
@@ -86,6 +94,8 @@ AI models are non-deterministic and can produce invalid JSON or "hallucinate" in
 ## 4. Agentic AI Extensibility & Future Readiness
 
 While the current requirement focuses on automated report generation, this architecture is designed to support future **Agentic AI** frameworks (such as AutoGen, Semantic Kernel, or LangGraph) without requiring database or service refactoring:
+
+![Agentic AI Extensibility & Future Readiness](ai_future_extensibility.png)
 
 ### 1. Unified Tool Registration (APIs as Tools)
 Microservices are built with standard REST contracts. In an agentic setup, the AI Agent can act as a controller, using these APIs as **Tools**. For example, the agent can query the Alarm Service (`GET /api/v1/alarms`) or update the incident timeline (`POST /api/v1/incidents/{id}/timeline`) on-demand as it executes its reasoning loop.
