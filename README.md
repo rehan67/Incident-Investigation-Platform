@@ -10,13 +10,8 @@ A comprehensive architecture design for an enterprise-grade, AI-ready platform t
 
 Semiconductor equipment engineers currently **manually** retrieve alarm logs, maintenance history, SOPs, and production information when machine downtime occurs — before deciding on corrective actions. This is time-consuming, error-prone, and doesn't scale.
 
-This platform automates the investigation workflow:
 
-```
-Engineer reports       Platform gathers       AI analyzes        Engineer reviews
-machine downtime  →    contextual data   →    the context   →   & submits report
-                       from 5+ sources        (external svc)
-```
+![Platform Solution Overview](solution.png)
 
 The architecture is designed to support **future Agentic AI capabilities** without requiring re-architecture.
 
@@ -84,28 +79,7 @@ The architecture is designed to support **future Agentic AI capabilities** witho
 
 ## Microservice Overview
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│                    PLATFORM SERVICES (11)                       │
-│                                                                 │
-│  ┌──────────────┐  ┌────────────────┐  ┌─────────────────────┐ │
-│  │ 1. Incident  │  │ 2. Equipment   │  │ 3. Alarm History    │ │
-│  │    Service   │  │    Service     │  │    Service          │ │
-│  └──────────────┘  └────────────────┘  └─────────────────────┘ │
-│  ┌──────────────┐  ┌────────────────┐  ┌─────────────────────┐ │
-│  │ 4. SOP       │  │ 5. Production  │  │ 6. Investigation    │ │
-│  │    Service   │  │    Data Service│  │    Orchestrator     │ │
-│  └──────────────┘  └────────────────┘  └─────────────────────┘ │
-│  ┌──────────────┐  ┌────────────────┐  ┌─────────────────────┐ │
-│  │ 7. AI Gateway│  │ 8. Report      │  │ 9. User & Auth      │ │
-│  │    Service   │  │    Service     │  │    Service          │ │
-│  └──────────────┘  └────────────────┘  └─────────────────────┘ │
-│  ┌──────────────┐  ┌────────────────┐                          │
-│  │10. Notif.    │  │11. Audit       │                          │
-│  │    Service   │  │    Service     │                          │
-│  └──────────────┘  └────────────────┘                          │
-└────────────────────────────────────────────────────────────────┘
-```
+![Microservice Overview](microservice_overview.png)
 
 ---
 
