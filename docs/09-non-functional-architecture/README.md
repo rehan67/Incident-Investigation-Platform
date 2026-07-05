@@ -6,21 +6,25 @@ The platform enforces a **Zero-Trust Security Model** across all workloads and e
 
 ```mermaid
 graph TD
-    CLIENT[React Client] -->|HTTPS + JWT| APIM[Azure APIM Gateway]
-    APIM -->|Validate JWT Signature / Expire| APIM
-    APIM -->|Forward + Token Claims| INGRESS[K8s NGINX Ingress]
-    INGRESS -->|HTTPS| WORKLOADS[Platform Services]
+    CLIENT["React Client"] -->|HTTPS TLS 1.3| FD["Azure Front Door Premium + WAF"]
+    FD -->|Edge Ingress Routing| APIM["Azure API Management (APIM)"]
+    APIM -->|Validate JWT Signature & Claims| APIM
+    APIM -->|Forward + Token Claims via LB| INGRESS["K8s NGINX Ingress"]
+    INGRESS -->|HTTPS mTLS or Network Policies| WORKLOADS["Platform Services"]
     
-    subgraph Service-to-Service Protection
-        WORKLOADS -->|OAuth2 client_credentials| SECURE_COMM[mTLS / Network Policies]
-    end
-
-    WORKLOADS -->|Secrets CSI Driver| KV[Azure Key Vault]
+    WORKLOADS -->|Secrets Store CSI Driver| KV["Azure Key Vault"]
+    WORKLOADS -->|Secure Egress via TLS| FW["Azure Firewall Premium"]
+    FW -->|Filtered HTTPS Outbound| AI_SVC["External AI Service (OpenAI)"]
 ```
+
+> [!TIP]
+> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
+> ![Zero-Trust Security Architecture](zero_trust_security_architecture.png)
 
 ### 1.1 Authentication & Token Validation
 *   **Identity Provider**: Federated authentication via **Azure AD** (OIDC protocol).
-*   **JWT Access Tokens**: Inbound HTTP requests must contain an `Authorization: Bearer <Token>` header. Tokens have a short lifetime (15 minutes). APIM validates signatures against Azure AD's openid-configuration keys.
+*   **Edge Validation**: Inbound HTTP requests are filtered by **Azure Front Door Premium + WAF** at the global edge to block malicious payloads (SQLi, XSS, DDoS) before routing to the API gateway.
+*   **JWT Access Tokens**: Inbound HTTP requests must contain an `Authorization: Bearer <Token>` header. Tokens have a short lifetime (15 minutes). **APIM** validates signatures against Azure AD's openid-configuration keys.
 *   **Workload Identity**: Internal service-to-service communication is secured via **Azure Workload Identity**. Pods assume a managed Azure identity (Service Account mapped to an Entra ID Service Principal) to query resources without using static connection strings or credentials.
 
 ### 1.2 Role-Based Access Control (RBAC)
@@ -37,7 +41,7 @@ public async Task<IActionResult> EditReport(Guid id, [FromBody] EditReportReques
 ```
 
 ### 1.3 Encryption & Key Management
-*   **In-Transit**: TLS 1.3 enforced at the API Gateway. All service-to-service calls inside the Kubernetes cluster are encrypted via HTTPS.
+*   **In-Transit**: TLS 1.3 is terminated at the edge by **Azure Front Door Premium**. Traffic is re-encrypted and forwarded (TLS 1.2) to **APIM** and down to the **AKS NGINX Ingress Controller**. All service-to-service communication inside the cluster is encrypted via HTTPS (secured with network policies).
 *   **At-Rest**: Azure Database for PostgreSQL and Blob Storage volumes are encrypted using AES-256 with customer-managed keys (CMK) stored in **Azure Key Vault**.
 *   **Secrets Store CSI Driver**: Environment credentials, database passwords, and API keys are not stored in source code. They are fetched dynamically at container startup from Azure Key Vault and mounted as temporary memory-only files.
 
@@ -55,6 +59,10 @@ graph LR
     OTEL -->|Traces| TEMPO[Grafana Tempo] --> GRAF
     OTEL -->|JSON Logs| LOKI[Grafana Loki] --> GRAF
 ```
+
+> [!TIP]
+> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
+> ![Observability Architecture](observervability_architecture.png)
 
 ### 2.1 Three-Pillar Monitoring Stack
 *   **Distributed Tracing**: Standard OpenTelemetry SDKs trace commands as they flow across boundaries (e.g., from `Incident Service` → `Kafka` → `Orchestrator` → `AI Gateway`). A unified `traceparent` (W3C format) header propagates the context.
