@@ -9,25 +9,29 @@ sequenceDiagram
     autonumber
     actor Engineer as 🧑‍🔧 Equipment Engineer
     participant React as 🖥️ React SPA (UI)
+    participant FD as 🚪 Azure Front Door Premium + WAF
     participant APIM as 🚪 API Gateway (APIM)
     participant INC as 📋 Incident Service
     participant KAFKA as 📨 Apache Kafka
     participant ORCH as 🎯 Investigation Orchestrator
     participant DATA as 🏭 Data Services<br/>(Equip, Alarm, SOP, Prod)
     participant AIGW as 🤖 AI Gateway Service
+    participant FW as 🛡️ Azure Firewall Premium
     participant EXT_AI as 🧠 External AI (OpenAI)
     participant RPT as 📊 Report Service
     participant NOTIF as 📧 Notification Service
 
     %% Stage 1: Incident Reporting
     Engineer->>React: Report Downtime Incident
-    React->>APIM: POST /api/v1/incidents (with Idempotency-Key)
+    React->>FD: POST /api/v1/incidents (with Idempotency-Key)
+    FD->>APIM: Forward Request (HTTPS)
     APIM->>APIM: Validate JWT & Rate Limit
-    APIM->>INC: Forward Create Incident Command
+    APIM->>INC: Forward Create Incident Command (via LB/Ingress)
     INC->>INC: Write 'incidents_db' (Status: REPORTED)
     INC->>KAFKA: Publish 'incident.created' event
     INC-->>APIM: Return 201 Created (Incident ID)
-    APIM-->>React: Return 201 Created
+    APIM-->>FD: Forward Response
+    FD-->>React: Return 201 Created
     React-->>Engineer: Show Incident Reported (Spinner)
 
     %% Stage 2: Orchestration & Context Assembly
@@ -53,8 +57,10 @@ sequenceDiagram
     %% Stage 3: AI Inference & Validation
     ORCH->>AIGW: POST /internal/ai/analyze (Context Package)
     AIGW->>AIGW: Retrieve Prompt Template & Redact PII
-    AIGW->>EXT_AI: Outbound HTTPS POST (Inference)
-    EXT_AI-->>AIGW: Return Raw AI Completion
+    AIGW->>FW: Outbound HTTPS POST (Inference)
+    FW->>EXT_AI: Forward POST to OpenAI Endpoint
+    EXT_AI-->>FW: Return Raw AI Completion
+    FW-->>AIGW: Forward AI Response
     AIGW->>AIGW: Validate JSON schema, confidence & safety
     AIGW-->>ORCH: Return Validated AnalysisResult
     ORCH->>ORCH: Save Results to DB (Status: COMPLETED)
@@ -72,21 +78,30 @@ sequenceDiagram
 
     %% Stage 5: Engineer Audit & Final Submission
     Engineer->>React: Open Report Link
-    React->>APIM: GET /api/v1/reports/{id}
-    APIM->>RPT: Forward Query
-    RPT-->>React: Return Draft Report Detail
+    React->>FD: GET /api/v1/reports/{id}
+    FD->>APIM: Forward Request
+    APIM->>RPT: Forward Query (via LB/Ingress)
+    RPT-->>APIM: Return Draft Report
+    APIM-->>FD: Forward Response
+    FD-->>React: Return Draft Report Detail
     Engineer->>React: Modify findings or actions
-    React->>APIM: PATCH /api/v1/reports/{id}
-    APIM->>RPT: Forward Update
+    React->>FD: PATCH /api/v1/reports/{id}
+    FD->>APIM: Forward Update
+    APIM->>RPT: Forward Update (via LB/Ingress)
     RPT->>RPT: Write version 2 history
-    RPT-->>React: Return 200 OK (Updated)
+    RPT-->>APIM: Return 200 OK (Updated)
+    APIM-->>FD: Forward Response
+    FD-->>React: Return 200 OK (Updated)
     
     Engineer->>React: Click Submit Report
-    React->>APIM: PUT /api/v1/reports/{id}/submit
-    APIM->>RPT: Forward Submit
+    React->>FD: PUT /api/v1/reports/{id}/submit
+    FD->>APIM: Forward Submit
+    APIM->>RPT: Forward Submit (via LB/Ingress)
     RPT->>RPT: Lock Report (Status: SUBMITTED)
     RPT->>KAFKA: Publish 'report.submitted' event
-    RPT-->>React: Return 200 OK
+    RPT-->>APIM: Return 200 OK
+    APIM-->>FD: Forward Response
+    FD-->>React: Return 200 OK
     KAFKA->>INC: Consume 'report.submitted'
     INC->>INC: Close Incident (Status: CLOSED)
     React-->>Engineer: Show Report Submitted & Incident Closed
@@ -94,7 +109,7 @@ sequenceDiagram
 
 > [!TIP]
 > **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
-> ![Happy Path Workflow](sequence_diagram.png)
+> ![Happy Path Workflow](happy_path.png)
 
 ---
 
@@ -139,6 +154,10 @@ sequenceDiagram
     ORCH->>KAFKA: Publish 'investigation.completed' (flagged with failover info)
 ```
 
+> [!TIP]
+> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
+> ![Error Recovery and Fallback Flow](error_recovery_and_fallbakc_flow.png)
+
 ### Scenario C: Complete AI Validation Failure (Manual Override Gate)
 If both primary and secondary AI services fail to respond, or return data that fails validation checks (e.g., hallucinated SOPs that do not exist), the orchestrator triggers the manual investigation process:
 
@@ -161,6 +180,10 @@ If both primary and secondary AI services fail to respond, or return data that f
 [Notification Service alerts Engineer: "AI investigation offline. Please complete report manually."]
 ```
 
+> [!TIP]
+> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
+> ![AI Validation Failed](ai_validation_failed.png)
+
 ---
 
 ## 3. Workflow State Transition Rules
@@ -179,6 +202,10 @@ stateDiagram-v2
     
     CLOSED --> [*]
 ```
+
+> [!TIP]
+> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
+> ![Incident State Transition Constraints](incident_state_%20transition%20_constraints.png)
 
 ### 3.2 Investigation Saga State Constraints
 
@@ -206,6 +233,10 @@ stateDiagram-v2
     
     COMPLETED --> [*]
 ```
+
+> [!TIP]
+> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
+> ![Investigation Saga State Constraints](investigation_saga_state_constraints.png)
 
 ---
 
