@@ -37,71 +37,13 @@ The platform uses an **event-driven microservice architecture** where:
 
 ## High-Level System View
 
-```
-                         ┌──────────────┐
-                         │  Engineers    │
-                         │  (React SPA) │
-                         └──────┬───────┘
-                                │
-                         ┌──────▼───────┐
-                         │  Azure API   │
-                         │  Management  │
-                         │  (Gateway)   │
-                         └──────┬───────┘
-                                │
-          ┌─────────────────────┼─────────────────────┐
-          │                     │                     │
-    ┌─────▼──────┐       ┌─────▼──────┐       ┌──────▼─────┐
-    │  Incident  │       │Investigation│       │  Report    │
-    │  Service   │       │Orchestrator │       │  Service   │
-    └─────┬──────┘       └──────┬──────┘       └────────────┘
-          │                     │
-          │ event        ┌──────┼──────────────┐
-          └──────►Kafka  │      │              │
-                  │      ▼      ▼              ▼
-                  │  Equipment  Alarm    SOP + Production
-                  │  Service    History  Services
-                  │                │
-                  │         ┌──────▼──────┐
-                  │         │ AI Gateway  │──► External AI
-                  │         └─────────────┘    Service
-                  │
-                  ├──► Notification Service
-                  └──► Audit Service
-```
+![High-Level System View](high_level_system_view.png)
 
 ---
 
 ## Investigation Workflow Summary
 
-```
-1. REPORT     │ Engineer reports machine downtime via React UI
-              │ → Incident Service creates incident record
-              │ → Publishes `incident.created` event to Kafka
-              │
-2. GATHER     │ Investigation Orchestrator consumes event
-              │ → Calls Equipment Service (equipment info + maintenance history)
-              │ → Calls Alarm History Service (recent alarms for this equipment)
-              │ → Calls SOP Service (relevant SOPs by equipment type + alarm code)
-              │ → Calls Production Data Service (recent production context)
-              │ → Assembles structured InvestigationContext
-              │
-3. ANALYZE    │ Orchestrator sends context to AI Gateway Service
-              │ → AI Gateway selects provider, builds prompt, calls external AI
-              │ → Validates AI response (schema, completeness, confidence, safety)
-              │ → Returns structured AnalysisResult
-              │
-4. REPORT     │ Orchestrator triggers Report Service
-              │ → Auto-generates structured incident report from AI analysis
-              │ → Publishes `report.generated` event
-              │ → Notification Service alerts engineer
-              │
-5. REVIEW     │ Engineer reviews and edits report via React UI
-              │ → Report versions tracked (every edit preserved)
-              │ → Engineer submits final report
-              │ → Publishes `report.submitted` event
-              │ → Audit Service logs final submission
-```
+![Investigation Workflow Summary](investigation_workflow_summary.png)
 
 ---
 
@@ -122,8 +64,8 @@ The platform uses an **event-driven microservice architecture** where:
 
 | Aspect | Approach |
 |--------|----------|
-| **Security** | Azure AD (OAuth 2.0/OIDC), RBAC, TLS 1.3, Azure Key Vault, PII redaction for AI |
-| **Observability** | OpenTelemetry + Prometheus + Grafana + Loki; distributed tracing across investigation flow |
+| **Security** | Azure Front Door WAF edge, Azure AD, RBAC, TLS 1.3 edge termination, Key Vault Workload Identity, Azure Firewall Premium egress, PII redaction |
+| **Observability** | OTel + Prometheus + Grafana + Loki (app metrics/logs/traces) and Azure Monitor (platform/infrastructure logs) |
 | **Resilience** | Polly (circuit breaker, retry, timeout, bulkhead); Kafka DLQ; AI provider fallback |
 | **Scalability** | HPA per service, Kafka partitioning, Redis caching, PG read replicas |
 | **High Availability** | Multi-AZ AKS, zone-redundant databases, 3+ replicas per service |
