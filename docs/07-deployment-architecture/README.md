@@ -281,54 +281,65 @@ The deployment pipeline is fully automated via **GitHub Actions**, establishing 
 ### 2.1 Pipeline Architecture Diagram
 
 ```mermaid
-graph LR
-    subgraph developer ["Developer Workstation"]
-        DEV["👨‍💻 Developer<br/>Feature Branch"]
+graph TD
+    %% Developer & Source Controls
+    DEV["Developer Workstation<br/>Feature Branch"]
+    GH_PR["GitHub Pull Request"]
+    GH_MAIN["GitHub main Branch<br/>Protected"]
+
+    DEV -->|git push| GH_PR
+    GH_PR -->|Approved & Merged| GH_MAIN
+
+    %% ── TRACK 1: FRONTEND SPA ──
+    subgraph track_fe ["Track 1: Frontend React SPA Pipeline"]
+        FE_CI["Build React SPA<br/>npm run build"]
+        FE_DEPLOY["Azure Storage Deploy<br/>Blob sync to snet-apim Static Web"]
+        FE_CDN["Purge Front Door CDN<br/>Flush edge cached assets"]
     end
 
-    subgraph github ["GitHub"]
-        PR["Pull Request<br/>Code Review"]
-        MAIN["main branch<br/>Protected"]
+    %% ── TRACK 2: BACKEND MICROSERVICES ──
+    subgraph track_be ["Track 2: Backend Microservices (GitOps)"]
+        BE_CI["Build & Scan<br/>dotnet build, tests, SonarQube"]
+        BE_ACR["Push to ACR<br/>Upload tagged Docker images"]
+        BE_GITOPS["Update GitOps Manifests<br/>Commit tag to Config Repo"]
+        BE_FLUX["AKS FluxCD Reconciler<br/>Reconcile cluster namespace state"]
     end
 
-    subgraph ci_pipeline ["CI Pipeline (GitHub Actions)"]
-        RESTORE["📦 dotnet restore<br/>NuGet Packages"]
-        BUILD["🔨 dotnet build<br/>All 11 Services"]
-        UNIT["🧪 dotnet test<br/>Unit Tests + Coverage"]
-        SONAR["🔍 SonarQube<br/>Code Quality Gate"]
-        TRIVY["🛡️ Trivy Scan<br/>Docker Image CVEs"]
-        SNYK["🛡️ Snyk Scan<br/>NuGet Dependencies"]
+    %% ── TRACK 3: INFRASTRUCTURE IaC ──
+    subgraph track_infra ["Track 3: Infrastructure IaC Pipeline"]
+        INFRA_LINT["Tf Validate & Check<br/>Terraform validation"]
+        INFRA_PLAN["Terraform Plan<br/>Dry-run check against active subscription"]
+        INFRA_APPLY["Terraform Apply<br/>Provision Azure resources"]
     end
 
-    subgraph cd_pipeline ["CD Pipeline (GitHub Actions)"]
-        DOCKER["🐳 Docker Build<br/>Multi-stage Build<br/>Tag: git SHA"]
-        ACR_PUSH["📦 Push to ACR<br/>Azure Container Registry"]
-        HELM_STG["🚀 Helm Deploy<br/>Staging Namespace"]
-        INT_TEST["🧪 Integration Tests<br/>Against Staging"]
-        GATE["🚦 Manual Approval<br/>Lead Engineer Gate"]
-        HELM_PROD["🚀 Helm Deploy<br/>Production Namespace<br/>Blue-Green Strategy"]
-        SMOKE["✅ Smoke Tests<br/>Health Check Endpoints"]
-    end
+    GH_MAIN -->|Trigger FE Build| FE_CI
+    FE_CI --> FE_DEPLOY --> FE_CDN
 
-    DEV -->|git push| PR
-    PR -->|Approved + Merged| MAIN
-    MAIN --> RESTORE --> BUILD --> UNIT
-    UNIT --> SONAR
-    UNIT --> TRIVY
-    UNIT --> SNYK
-    SONAR -->|Pass| DOCKER
-    TRIVY -->|Pass| DOCKER
-    SNYK -->|Pass| DOCKER
-    DOCKER --> ACR_PUSH --> HELM_STG --> INT_TEST --> GATE --> HELM_PROD --> SMOKE
+    GH_MAIN -->|Trigger BE Build| BE_CI
+    BE_CI --> BE_ACR --> BE_GITOPS
+    BE_GITOPS -->|Trigger Sync| BE_FLUX
+
+    GH_MAIN -->|Trigger IaC Run| INFRA_LINT
+    INFRA_LINT --> INFRA_PLAN --> INFRA_APPLY
 ```
 
 > [!TIP]
 > **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
-> ![CI/CD Pipeline](deployment_architecture.PNG)
+> ![CI/CD Pipeline](cicd_pipeline.png)
 
 ### 2.2 Pipeline Stage Details
 
-#### Stage 1: Continuous Integration (CI) — Triggered on Pull Request
+Our deployment pipelines are split into three dedicated tracks:
+
+*   **Track 1: Backend Microservices Pipeline** — Governed via GitHub Actions (CI) and FluxCD (GitOps CD).
+*   **Track 2: Frontend React SPA Pipeline** — Governed via GitHub Actions (CI & CD) deploying to static blob space.
+*   **Track 3: Infrastructure IaC Pipeline** — Governed via GitHub Actions (CI & CD) planning/applying Terraform configurations.
+
+---
+
+#### 2.2.1 Backend Microservices Pipeline Stages
+
+##### Stage 1: Continuous Integration (CI) — Triggered on Pull Request
 
 | Step | Tool | Purpose | Failure Action |
 |------|------|---------|---------------|
@@ -339,29 +350,58 @@ graph LR
 | **Image Scan** | Trivy (`trivy image`) | Scan Docker base image (`mcr.microsoft.com/dotnet/aspnet:10.0-alpine`) for HIGH/CRITICAL CVEs | Block PR merge |
 | **Dependency Scan** | Snyk (`snyk test`) | Scan NuGet packages for known vulnerabilities | Block PR merge |
 
-#### Stage 2: Continuous Delivery (CD) — Triggered on merge to `main`
+##### Stage 2: Continuous Delivery (CD) — Triggered on merge to `main`
 
 | Step | Tool | Purpose | Failure Action |
 |------|------|---------|---------------|
 | **Docker Build** | `docker build --target final` | Multi-stage build: SDK → Runtime. Tag with `git rev-parse --short HEAD` | Pipeline fails |
 | **ACR Push** | `az acr login` + `docker push` | Push tagged image to Azure Container Registry | Pipeline fails |
-| **Staging Deploy** | `helm upgrade --install --namespace staging` | Deploy all services to staging K8s namespace | Pipeline fails |
+| **Staging Tag Update** | `yq` + `git commit` | Commits the new image tag to the GitOps configuration repo under `staging/` | Pipeline fails |
+| **Staging Reconcile** | FluxCD Sync | FluxCD operator inside AKS pulls the tag updates and deploys them to `staging` | Sync fails / auto-rollbacks |
 | **Integration Tests** | Custom HTTP test suite | Validate API contracts against live staging endpoints | Pipeline fails |
 | **Manual Gate** | GitHub Environment Protection Rule | Lead Engineer or Manager must click "Approve" in GitHub UI | Pipeline paused indefinitely |
-| **Production Deploy** | `helm upgrade --install --namespace production` | Blue-Green deployment with readiness probes | Pipeline fails, auto-rollback |
+| **Production Tag Update** | `yq` + `git commit` | Commits the new image tag to the GitOps configuration repo under `production/` | Pipeline fails |
+| **Production Reconcile** | FluxCD Sync (Blue-Green) | FluxCD reconciles the cluster state with the `production/` values using Blue-Green routing | Sync fails / auto-rollbacks |
 | **Smoke Test** | `curl` health endpoints | Verify `/health` returns 200 OK on all 11 services | Trigger automatic rollback |
 
-### 2.3 GitHub Actions Workflow Definition (Illustrative)
+---
+
+#### 2.2.2 Frontend SPA Pipeline Stages
+
+| Step | Tool | Purpose | Failure Action |
+|------|------|---------|---------------|
+| **Install** | `npm ci` | Installs frontend dependencies deterministically from package-lock | Block PR merge |
+| **Lint & Format** | ESLint / Prettier | Verifies code style, syntax rules, and checks for potential bugs | Block PR merge |
+| **Build SPA** | `npm run build` | Compiles TypeScript and packages optimized, minified React bundles | Block PR merge |
+| **Blob Sync** | Azure CLI / Storage Sync | Uploads compiled React bundles to snet-apim Static Web Storage container | Pipeline fails |
+| **CDN Purge** | Azure CLI / Front Door | Flushes cached static assets at all edge locations to propagate the update | Pipeline fails |
+
+---
+
+#### 2.2.3 Infrastructure IaC Pipeline Stages
+
+| Step | Tool | Purpose | Failure Action |
+|------|------|---------|---------------|
+| **Lint & Format** | `tflint` / `terraform fmt` | Validates Terraform code structure and checks syntax rules | Block PR merge |
+| **Initialize** | `terraform init` | Downloads provider plugins and configures remote state storage | Block PR merge |
+| **Generate Plan** | `terraform plan` | Generates execution blueprint showing resources to be created/modified | Block PR merge |
+| **Apply Plan** | `terraform apply` | Provisions and configures Azure subscription resources according to plan | Pipeline fails |
+
+### 2.3 GitHub Actions Workflow Definitions (Illustrative)
+
+#### 2.3.1 Backend Microservices Pipeline Workflow (`ci-cd-backend.yml`)
 
 ```yaml
-# .github/workflows/ci-cd-pipeline.yml
-name: Platform CI/CD Pipeline
+# .github/workflows/ci-cd-backend.yml
+name: Backend Microservices Pipeline
 
 on:
   push:
     branches: [main]
+    paths: ['src/backend/**']
   pull_request:
     branches: [main]
+    paths: ['src/backend/**']
 
 env:
   ACR_NAME: acrplatformprod
@@ -439,12 +479,27 @@ jobs:
             docker push ${{ env.ACR_NAME }}.azurecr.io/${svc}:${SHORT_SHA}
           done
 
-      - name: Deploy to Staging (Helm)
-        uses: azure/k8s-deploy@v4
+      - name: Checkout GitOps Configuration Repo
+        uses: actions/checkout@v4
         with:
-          namespace: staging
-          manifests: ${{ env.HELM_CHART_PATH }}
-          images: ${{ env.ACR_NAME }}.azurecr.io/*:${{ github.sha }}
+          repository: rehan67/GitOps-Config
+          token: ${{ secrets.GITOPS_PAT }}
+          path: config-repo
+
+      - name: Update Staging Image Tags
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          cd config-repo/staging
+          for svc in incident-service equipment-service alarm-history-service \
+                     sop-service production-data-service investigation-orchestrator \
+                     ai-gateway-service report-service user-auth-service \
+                     notification-service audit-service; do
+            yq -i ".${svc}.image.tag = \"${SHORT_SHA}\"" values.yaml
+          done
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git commit -am "Deploy ${SHORT_SHA} to staging"
+          git push
 
       - name: Run Integration Tests
         run: dotnet test tests/Integration/ --configuration Release
@@ -457,14 +512,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy to Production (Blue-Green via Helm)
+      - name: Checkout GitOps Configuration Repo
+        uses: actions/checkout@v4
+        with:
+          repository: rehan67/GitOps-Config
+          token: ${{ secrets.GITOPS_PAT }}
+          path: config-repo
+
+      - name: Promote Release to Production
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
-          helm upgrade --install platform-prod ${{ env.HELM_CHART_PATH }} \
-            --namespace production \
-            --set global.image.tag=${SHORT_SHA} \
-            --set global.strategy.type=BlueGreen \
-            --wait --timeout 300s
+          cd config-repo/production
+          for svc in incident-service equipment-service alarm-history-service \
+                     sop-service production-data-service investigation-orchestrator \
+                     ai-gateway-service report-service user-auth-service \
+                     notification-service audit-service; do
+            yq -i ".${svc}.image.tag = \"${SHORT_SHA}\"" values.yaml
+          done
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git commit -am "Promote ${SHORT_SHA} to production"
+          git push
 
       - name: Smoke Test All Services
         run: |
@@ -479,6 +547,132 @@ jobs:
             fi
           done
           echo "All services healthy."
+```
+
+---
+
+#### 2.3.2 Frontend SPA Pipeline Workflow (`ci-cd-frontend.yml`)
+
+```yaml
+# .github/workflows/ci-cd-frontend.yml
+name: Frontend SPA CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/frontend-spa/**']
+  pull_request:
+    branches: [main]
+    paths: ['src/frontend-spa/**']
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'src/frontend-spa/package-lock.json'
+
+      - name: Install Dependencies
+        run: |
+          cd src/frontend-spa
+          npm ci
+
+      - name: Run Linting
+        run: |
+          cd src/frontend-spa
+          npm run lint
+
+      - name: Build Production Bundle
+        run: |
+          cd src/frontend-spa
+          npm run build
+
+      - name: Deploy to Azure Storage Static Website
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: azure/CLI@v1
+        with:
+          azcliversion: 2.50.0
+          inlineScript: |
+            az storage blob sync \
+              --account-name storagedownspaprod \
+              --container '$web' \
+              --source ./src/frontend-spa/dist \
+              --auth-mode key
+
+      - name: Purge Azure Front Door CDN
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: azure/CLI@v1
+        with:
+          azcliversion: 2.50.0
+          inlineScript: |
+            az afd endpoint purge \
+              --resource-group rg-platform-prod \
+              --profile-name fdplatformprod \
+              --endpoint-name ep-platform-prod \
+              --domains "semicon-corp.com" \
+              --content-paths "/*"
+```
+
+---
+
+#### 2.3.3 Infrastructure IaC Pipeline Workflow (`ci-cd-infra.yml`)
+
+```yaml
+# .github/workflows/ci-cd-infra.yml
+name: Infrastructure IaC Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths: ['deploy/terraform/**']
+  pull_request:
+    branches: [main]
+    paths: ['deploy/terraform/**']
+
+jobs:
+  terraform:
+    name: 'Terraform Plan & Apply'
+    runs-on: ubuntu-latest
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Terraform Format Check
+        run: terraform fmt -check
+        working-directory: ./deploy/terraform
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./deploy/terraform
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ./deploy/terraform
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+        working-directory: ./deploy/terraform
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve tfplan
+        working-directory: ./deploy/terraform
 ```
 
 ---
@@ -510,7 +704,7 @@ graph LR
 
 > [!TIP]
 > **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
-> ![High Availability](High%20Availability.png)
+> ![High Availability](availability_strategy.png)
 
 *   **Zone Redundancy**: AKS cluster nodes, Event Hubs namespaces, and Redis Premium cache instances are distributed across **three distinct Azure Availability Zones** (AZs).
 *   **Pod Anti-Affinity**: Kubernetes scheduling rules ensure that replicas of the same service (e.g., two Incident Service pods) are placed on nodes in *different* availability zones. If Zone 1 goes down, the replica in Zone 2 continues serving traffic without interruption.
@@ -532,6 +726,10 @@ graph LR
 
          RPO: < 5 minutes  │  RTO: < 1 hour
 ```
+
+> [!TIP]
+> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
+> ![Disaster Recovery Strategy](disaster_recorvery_strategy.png)
 
 *   **Region Pairing**: Primary region is deployed in **Southeast Asia**; backup region in **East Asia**.
 *   **Geo-Replication**:
