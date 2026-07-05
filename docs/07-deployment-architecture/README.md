@@ -683,28 +683,7 @@ The platform is architected for **99.9% uptime**, critical for semiconductor fab
 
 ### 3.1 High Availability Strategy
 
-```mermaid
-graph LR
-    subgraph az1 ["Availability Zone 1"]
-        AKS_N1["AKS Node 1"]
-        PG_PRIMARY["PostgreSQL Primary"]
-    end
-    subgraph az2 ["Availability Zone 2"]
-        AKS_N2["AKS Node 2"]
-        PG_STANDBY["PostgreSQL Standby<br/>Synchronous Replication"]
-    end
-    subgraph az3 ["Availability Zone 3"]
-        AKS_N3["AKS Node 3"]
-    end
-
-    PG_PRIMARY -->|Sync Replication| PG_STANDBY
-    AKS_N1 -.-> AKS_N2
-    AKS_N2 -.-> AKS_N3
-```
-
-> [!TIP]
-> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
-> ![High Availability](availability_strategy.png)
+![High Availability](availability_strategy.png)
 
 *   **Zone Redundancy**: AKS cluster nodes, Event Hubs namespaces, and Redis Premium cache instances are distributed across **three distinct Azure Availability Zones** (AZs).
 *   **Pod Anti-Affinity**: Kubernetes scheduling rules ensure that replicas of the same service (e.g., two Incident Service pods) are placed on nodes in *different* availability zones. If Zone 1 goes down, the replica in Zone 2 continues serving traffic without interruption.
@@ -712,24 +691,7 @@ graph LR
 
 ### 3.2 Disaster Recovery Strategy (Active-Passive)
 
-```
-┌──────────────────────────────┐         ┌──────────────────────────────┐
-│   PRIMARY REGION             │         │   SECONDARY REGION           │
-│   Southeast Asia             │         │   East Asia                  │
-│                              │         │                              │
-│   AKS Cluster (Active)      │  ──────►│   AKS Cluster (Standby)     │
-│   PostgreSQL Primary         │  Async  │   PostgreSQL Read Replica   │
-│   Event Hubs (Active)        │  Repli- │   Event Hubs (Geo-DR Pair)  │
-│   Blob Storage (GRS Primary) │  cation │   Blob Storage (GRS Sec.)   │
-│   Redis (Active)             │         │   Redis (Passive)           │
-└──────────────────────────────┘         └──────────────────────────────┘
-
-         RPO: < 5 minutes  │  RTO: < 1 hour
-```
-
-> [!TIP]
-> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
-> ![Disaster Recovery Strategy](disaster_recorvery_strategy.png)
+![Disaster Recovery Strategy](disaster_recorvery_strategy.png)
 
 *   **Region Pairing**: Primary region is deployed in **Southeast Asia**; backup region in **East Asia**.
 *   **Geo-Replication**:
