@@ -4,13 +4,7 @@
 
 This document charts how data moves through the platform during an incident investigation lifecycle. The lifecycle is divided into five distinct data flow stages:
 
-```
-[1. Incident Event] ──► [2. Context Assembly] ──► [3. AI Transformation] ──► [4. Report Drafting] ──► [5. Review & Finalize]
-```
-
-> [!TIP]
-> **Visual Reference**: If the diagram above does not render in your markdown viewer, you can view the exported image file directly:
-> ![Data Flow Pipeline](dataflow.png)
+![Data Flow Pipeline](dataflow.png)
 
 ---
 
@@ -131,15 +125,7 @@ public record ProductionSnapshot(
 
 ## 3. Data Lifecycle States
 
-```
-┌─────────────────┬─────────────────┬─────────────────┬──────────────────┐
-│ Transient       │ Cached          │ Persistent (DB) │ Cold/Immutable   │
-├─────────────────┼─────────────────┼─────────────────┼──────────────────┤
-│ Context Package │ Tool Config     │ Incidents       │ Report PDFs      │
-│ (In-memory DTO) │ Prompt Templates│ Alarms          │ Audit Log Rows   │
-│                 │ JWT Tokens      │ Reports         │                  │
-└─────────────────┴─────────────────┴─────────────────┴──────────────────┘
-```
+![Data Lifecycle States](data_lifecycle_states.png)
 
 ---
 
