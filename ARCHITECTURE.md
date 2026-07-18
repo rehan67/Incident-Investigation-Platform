@@ -57,6 +57,7 @@ The platform uses an **event-driven microservice architecture** where:
 | AI integration | Strategy + Adapter pattern | Vendor independence, fallback, validation | [ADR-003](docs/11-architecture-decision-records/ADR-003-ai-abstraction-layer.md) |
 | Technology stack | .NET 10, PostgreSQL, AKS | Enterprise-grade, Azure-native, type-safe | [ADR-005](docs/11-architecture-decision-records/ADR-005-technology-stack-selection.md) |
 | Service mesh | Not adopted (Polly + K8s native) | Overkill for 11 services, .NET has built-in resilience | [ADR-006](docs/11-architecture-decision-records/ADR-006-no-service-mesh.md) |
+| Container Platform | AKS (over Container Apps) | Portability, GitOps FluxCD, CNI zero-trust policies | [ADR-007](docs/11-architecture-decision-records/ADR-007-aks-vs-container-apps.md) |
 
 ---
 
