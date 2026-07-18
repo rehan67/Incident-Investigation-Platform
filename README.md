@@ -40,6 +40,7 @@ The architecture is designed to support **future Agentic AI capabilities** witho
 | Resource | Description |
 |----------|-------------|
 | [Architecture Overview](ARCHITECTURE.md) | Executive summary of the entire architecture |
+| [Architectural FAQ](docs/architectural_faq.md) | Key architectural questions and design trade-offs |
 | [Code Snippets](snippets/) | Illustrative C# interfaces, DTOs, and patterns (not runnable implementations) |
 
 ---
