@@ -208,8 +208,29 @@ The entire platform operates inside a single Azure Virtual Network (**VNet**) wi
 
 **Key Security Boundaries:**
 *   **No public IP** is assigned to any database, cache, or message broker. All data-tier resources are accessed exclusively via **Azure Private Endpoints** within the VNet.
-*   **Azure API Management** is the sole public-facing entry point for the entire platform.
+*   **Azure Front Door Premium** is the sole public-facing entry point for the entire platform, routing traffic internally to Azure API Management (APIM).
 *   AKS pods access **Azure Key Vault** secrets via the **Secrets Store CSI Driver**, which mounts secrets as in-memory tmpfs volumes at container startup — no secrets are stored in environment variables or Kubernetes ConfigMaps.
+
+---
+
+### 1.2.1 Proxy Architecture (Inbound & Outbound Routing)
+
+The network perimeter separates ingress (inbound) and egress (outbound) traffic using specialized reverse and forward proxy architectures:
+
+#### Inbound Traffic (Reverse Proxy Tier)
+To protect backend services from external exposure, inbound traffic passes through three distinct reverse proxy layers:
+1.  **Azure Front Door Premium (Global Reverse Proxy)**:
+    *   Acts as the edge reverse proxy. It terminates public TLS 1.3 connections, manages global SSL certificates, handles routing, and applies Web Application Firewall (WAF) rules to filter out malicious payloads (SQLi, XSS, and DDoS) before they reach the virtual network.
+2.  **Azure API Management (APIM - Gateway Reverse Proxy)**:
+    *   Acts as the API gateway. It intercepts requests forwarded by Front Door, validates JWT access signatures against Microsoft Entra ID keys, manages client rate limits (throttling), and forwards requests into the internal cluster.
+3.  **AKS NGINX Ingress Controller (Internal Reverse Proxy)**:
+    *   Acts as the cluster-level reverse proxy. It receives HTTP requests from the internal load balancer and performs routing inside the private Kubernetes network (e.g., mapping `/api/v1/incidents` to the `Incident Service` pods).
+
+#### Outbound Traffic (Forward Proxy Tier)
+To prevent data exfiltration and control outbound API calls, egress traffic is routed through a forward proxy:
+1.  **Azure Firewall Premium (Egress Forward Proxy)**:
+    *   When C# microservices make outbound HTTPS requests (e.g., the `AI Gateway Service` calling the external `api.openai.com` endpoint, or the `Notification Service` calling SMTP APIs), the traffic is forced through the Azure Firewall.
+    *   The firewall operates as a secure forward proxy, performing TLS inspection, verifying external certificates, and applying strict FQDN (Fully Qualified Domain Name) filtering rules so containers can only connect to pre-approved external domains.
 
 ---
 

@@ -92,3 +92,16 @@ This document addresses common architectural questions, design trade-offs, and c
     TimescaleDB is built directly on PostgreSQL, allowing us to keep relational integrity, SQL query syntax, and EF Core compatibility. However, it automatically partitions tables into time-based chunks called **hypertables**:
     1.  **Fast Writes & Reads**: It speeds up ingestion rates and isolates queries to specific downtime ranges (e.g., ±10m around the failure).
     2.  **Columnar Compression**: Automatically compresses older historical alarms by ~90%, saving massive storage costs while keeping historical data directly queryable.
+
+---
+
+### Q10: What reverse proxy and forward proxy concepts are used in this design? (Doc 07)
+*   **Context**: Differentiating inbound and outbound proxy routing in a zero-trust enterprise network.
+*   **Answer**:
+    We use a multi-tier proxy architecture to secure network traffic:
+    1.  **Inbound (Reverse Proxy Tier)**: We intercept client requests using three layers of reverse proxies:
+        *   *Azure Front Door Premium (Global Edge)*: Terminates TLS 1.3, manages SSL, and runs WAF rules (DDoS, SQLi, XSS filtering) at the internet edge.
+        *   *Azure API Management (APIM - Gateway)*: Handles JWT signature validation, token checks, and client rate limiting.
+        *   *AKS NGINX Ingress Controller (Internal)*: Directs traffic to individual microservices within the private virtual network.
+    2.  **Outbound (Forward Proxy Tier)**: We intercept container egress traffic using a single forward proxy:
+        *   *Azure Firewall Premium*: Outbound HTTP calls from services (e.g., the AI Gateway calling external LLM endpoints) are forced through the firewall. It performs TLS inspection, checks external certificates, and applies strict FQDN filtering to prevent data exfiltration.
