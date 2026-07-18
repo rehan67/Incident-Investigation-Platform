@@ -66,3 +66,29 @@ This document addresses common architectural questions, design trade-offs, and c
     1.  **Azure Monitor (Platform Logs)**: Monitors **cloud infrastructure PaaS** that does not run our C# code (e.g., Virtual Network flow logs, Azure Firewall blocks, Key Vault access audits, and APIM request rates). These logs cannot run OpenTelemetry sidecars and must flow to Log Analytics.
     2.  **OpenTelemetry + Grafana (App Logs/Metrics/Traces)**: Monitors **our microservice code**. It collects distributed traces (W3C traceparent headers propagating across Kafka) and service metrics (like Saga completion times), pushing them to Prometheus, Loki, and Grafana.
     3.  **Single Pane of Glass**: We use Grafana's native **Azure Monitor plugin** to pull infrastructure metrics directly into our application dashboards, giving engineers a single dashboard for both systems.
+
+---
+
+### Q7: Why did you decide NOT to adopt a Service Mesh (e.g., Istio)? (ADR-006)
+*   **Context**: Large microservice setups use service meshes for traffic routing, mTLS, and observability.
+*   **Answer**:
+    For a platform with 11 microservices, a Service Mesh adds unnecessary operational complexity, heavy CPU/RAM sidecar resource overhead, and increases learning curves. K8s native services handle DNS routing perfectly. We implement code-level HTTP resilience (circuit breakers, retries) natively using Polly and secure network boundaries via standard NetworkPolicies, making a Service Mesh overhead without return-on-investment at our scale.
+
+---
+
+### Q8: How is data consistency maintained across these isolated microservice databases?
+*   **Context**: A database-per-service pattern makes distributed transactions (like 2-Phase Commit) slow and hard to scale.
+*   **Answer**:
+    We enforce **Eventual Consistency** using Kafka event propagation and the Saga Orchestrator:
+    1.  When a state change happens in one domain (e.g., an incident is created), the service commits locally and publishes a durable event.
+    2.  Downstream services consume this event asynchronously and update their respective states.
+    3.  If a step in the sequence fails, the Orchestrator executes **compensating transactions** (e.g., rolling back states or deleting draft resources) rather than locking databases with distributed transaction logs.
+
+---
+
+### Q9: Why use TimescaleDB for Alarm History instead of standard PostgreSQL or NoSQL? (ADR-005)
+*   **Context**: Alarm logs are high-frequency time-series data. Standard tables degrade in performance when containing millions of records.
+*   **Answer**:
+    TimescaleDB is built directly on PostgreSQL, allowing us to keep relational integrity, SQL query syntax, and EF Core compatibility. However, it automatically partitions tables into time-based chunks called **hypertables**:
+    1.  **Fast Writes & Reads**: It speeds up ingestion rates and isolates queries to specific downtime ranges (e.g., ±10m around the failure).
+    2.  **Columnar Compression**: Automatically compresses older historical alarms by ~90%, saving massive storage costs while keeping historical data directly queryable.
