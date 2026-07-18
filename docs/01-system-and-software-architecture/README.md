@@ -455,7 +455,7 @@ sequenceDiagram
 | **Configuration** | Azure App Configuration + Key Vault | Centralized config, secrets separated |
 | **API Versioning** | Asp.Versioning package | URI-based versioning (`/v1/`, `/v2/`) |
 | **Validation** | FluentValidation | Request validation with clear error messages |
-| **Mapping** | Mapster or AutoMapper | DTO ↔ Domain model mapping |
+| **Mapping** | Mapster | DTO ↔ Domain model mapping |
 | **Mediator** | MediatR | CQRS command/query separation within services |
 | **Resilience** | Polly | Circuit breaker, retry, timeout per HTTP client |
 | **OpenAPI** | Swashbuckle / NSwag | Auto-generated API documentation |
